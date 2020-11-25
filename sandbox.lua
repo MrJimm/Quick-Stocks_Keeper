@@ -1,9 +1,23 @@
 require "math"
 t_id = nil
 
+col_idx = {}
+
+col_idx["Order number"] = 0
+col_idx["Ticker"] = 1
+col_idx["Order quantity"] = 4
+col_idx["Order status"] = 3
+col_idx["Flags"] = 2
+col_idx["Stop price"] = 5
+col_idx["Order price"] = 6
+col_idx["Current avg(bid, ask) price"] = 7
+col_idx["Current percent"] = 8
+col_idx["Levels"] = 9
+
 function OnInit()
 	log_path = "log.txt"
 	lio = io.open(log_path, 'a')
+	is_stop_requested = false
 end
 
 function Flags2Table(flags, qtableName)
@@ -94,54 +108,28 @@ function Flags2Table(flags, qtableName)
   return t
 end
 
-function CreateStopOrdersSummaryTable()
-	-- message('creating orders table...')
-
-	t_id = AllocTable();
-	
-	col_order_num = 0
-	col_ticker = 1
-	col_quantity = 3
-	col_order_status = 2
-	col_stop_price = 4
-	col_order_price = 5
-	col_current_price = 6
-	col_condition_status = 7
-	
-	AddColumn(t_id, col_order_num, "Order Number", true, QTABLE_INT_TYPE, 15)
-	AddColumn(t_id, col_ticker, "Ticker", true, QTABLE_STRING_TYPE, 15)
-	AddColumn(t_id, col_quantity, "Order quantity", true, QTABLE_INT_TYPE, 15)
-	AddColumn(t_id, col_order_status, "Order status", true, QTABLE_STRING_TYPE , 15)
-	AddColumn(t_id, col_stop_price, "Stop price", true, QTABLE_INT_TYPE, 15)
-	AddColumn(t_id, col_order_price, "Order price", true, QTABLE_INT_TYPE, 15)
-	AddColumn(t_id, col_current_price, "Current avg(bid, ask) price", true, QTABLE_INT_TYPE, 15)
-	AddColumn(t_id, col_condition_status, "Condition status", true, QTABLE_STRING_TYPE, 15)
+function UpdateStopOrdersSummaryTable(t_id)
+	Clear(t_id)
 	
 	so_count = getNumberOf('stop_orders')
-	--message('so_count' .. so_count)
-	
-	t = CreateWindow(t_id)
-
-	SetWindowCaption(t_id, "Orders")
-	
 	for i = 0, (so_count - 1) do
 		row = InsertRow(t_id, -1)
 		item = getItem('stop_orders', i)
-		-- message('item obtained' .. tableToString(item))
-		-- message(tostring(item['order_num']))
-		SetCell(t_id, i, col_order_num, tostring(item['order_num']), item['order_num'])
-		SetCell(t_id, i, col_ticker, tostring(item['sec_code']))
-		SetCell(t_id, i, col_quantity, string.format("%.0f", item['qty']))
+		
+		SetCell(t_id, i, col_idx["Order number"], tostring(item['order_num']), item['order_num'])
+		SetCell(t_id, i, col_idx["Ticker"], tostring(item['sec_code']))
+		SetCell(t_id, i, col_idx["Order quantity"], string.format("%.0f", item['qty']))
 		fl = Flags2Table(item['flags'], 'stop_orders')
-		SetCell(t_id, i, col_order_status, fl['state'] .. ' ' .. tostring(item['flags']), fl['state_num'])
-		SetCell(t_id, i, col_stop_price, tostring(item['condition_price']), item['condition_price'])
-		SetCell(t_id, i, col_order_price, tostring(item['price']), item['price'])
+		SetCell(t_id, i, col_idx["Flags"], tostring(item['flags']), item['flags'])
+		SetCell(t_id, i, col_idx["Order status"], fl['state'], fl['state_num'])
+		SetCell(t_id, i, col_idx["Stop price"], tostring(item['condition_price']), item['condition_price'])
+		SetCell(t_id, i, col_idx["Order price"], tostring(item['price']), item['price'])
 		
 		
 		bid_price = getParamEx(item['class_code'], item['sec_code'], "bid")['param_value']
 		offer_price = getParamEx(item['class_code'], item['sec_code'], "offer")['param_value']
 		current_price = (bid_price + offer_price) / 2; -- get current price for ticker
-		SetCell(t_id, i, col_current_price, tostring(current_price), 0)
+		SetCell(t_id, i, col_idx["Current avg(bid, ask) price"], tostring(current_price), 0)
 		
 		cond_status = ""
 		perc = math.abs(item['condition_price'] - current_price) / current_price
@@ -152,10 +140,54 @@ function CreateStopOrdersSummaryTable()
 		else
 			cond_status = "OK"
 		end
-		cond_status = string.format("%.2f", perc * 100) .. ": " .. cond_status
 		
-		SetCell(t_id, i, col_condition_status, cond_status, 0)
+		SetCell(t_id, i, col_idx["Current percent"], string.format("%.2f", perc * 100), 0)
+		
+		
+		SetCell(t_id, i, col_idx["Levels"], cond_status, 0)
 	end	
+end
+
+function CreateStopOrdersSummaryTable()
+	-- message('creating orders table...')
+
+	t_id = AllocTable();
+	
+	key = "Order number"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_INT_TYPE, 15)
+	
+	key = "Ticker"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_STRING_TYPE, 15)
+	
+	key = "Order quantity"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_INT_TYPE, 15)
+	
+	key = "Order status"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_STRING_TYPE , 15)
+	
+	key = "Stop price"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_INT_TYPE, 15)
+	
+	key = "Order price"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_INT_TYPE, 15)
+	
+	key = "Current avg(bid, ask) price"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_INT_TYPE, 15)
+	
+	key = "Current percent"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_STRING_TYPE, 15)
+	
+	key = "Flags"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_INT_TYPE, 15)
+	
+	key = "Levels"
+	AddColumn(t_id, col_idx[key], key, true, QTABLE_STRING_TYPE, 15)
+	
+	t = CreateWindow(t_id)
+
+	SetWindowCaption(t_id, "Stop orders")
+	
+	return t_id
 	
 	-- message('orders table has been created!')
 end
@@ -170,17 +202,16 @@ function tableToString(tab)
 end
 
 function OnStop()
+	is_stop_requested = true
 	lio:close()
 end
 
 function main(path)
 
-	CreateStopOrdersSummaryTable()
+	t_id = CreateStopOrdersSummaryTable()
 	
-	-- while isConnected() == 1 do
-	--	message("Hi" .. idx)
-		sleep(1000)
-	--	idx = idx + 1
-	--	InsertRow(t_id, -1)
-	
+	while isConnected() == 1 and not is_stop_requested do
+		UpdateStopOrdersSummaryTable(t_id)
+		sleep(3000)
+	end
 end
